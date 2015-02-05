@@ -1,0 +1,47 @@
+# Script to get the loggon status from RDP users
+# Rob de Jongh 30-01-2012
+# Versie 2.0
+$ska_file = "C:\ICToS\Web\ska.csv"  
+[array]$computer = get-content -path $ska_file
+[string]$filename = "C:\ICToS\Web\insert.html"
+
+
+if (test-path $filename) {if((get-content $filename | Measure-object).count -gt 1) { write-host "insert.html found + containing data"
+    if (test-path $computer) {if( (get-content $ska_file | Measure-object).count -gt 0) { write-host "computer file found + containing data"     
+            
+           foreach ( $Acomputer in $computer){ 
+                $Acomputer
+               if (Test-Connection -ComputerName $Acomputer -Count 2 -Quiet)  {
+                write-host $Acomputer connected 
+                $insert = ''
+                $active_user = ''
+                $ska_name = ''
+                $active = ''
+
+                $active_user = invoke-command -ComputerName $Acomputer -ErrorAction SilentlyContinue -ScriptBlock {
+                quser | select-object -skip 1 | findstr -i Actief | %{ $_.split(' ')[1]; }}     
+                if ($active_user) {
+                    write-host "found ActiveUser" $active_user $Acomputer
+                    $insert = get-content $filename 
+                    $ska_name = $insert | select-string "<h4>$Acomputer"
+                    $active = "<img src=`"img/On.png`" alt=`"On`" class=`"img`"><h4>$Acomputer</h4><h4>ActiveUser:$active_user</h4><p></p>";
+                    $insert | ForEach-Object { $_ -replace $ska_name, $active } | Set-Content -force $filename
+                    }
+                else { 
+                    write-host "no active user found" $Acomputer
+                    $insert = get-content $filename 
+                    $ska_name = $insert | select-string "<h4>$Acomputer"
+                    $active = "<img src=`"img/On.png`" alt=`"On`" class=`"img`"><h4>$Acomputer</h4><h4>ActiveUser:Geen</h4><p></p>";
+                    $active
+                    $insert | ForEach-Object { $_ -replace $ska_name, $active } | Set-Content -force $filename
+                    }
+            }           
+            else { 
+             write-host $Acomputer "Offline"
+             $insert = get-content $filename 
+             $ska_name = $insert | select-string "<h4>$Acomputer"
+             $ska_name
+             $active = "<img src=`"img/Off.png`" alt=`"On`" class=`"img`"><h4>$Acomputer</h4><h4>Offline</h4><p></p>";
+             $insert | ForEach-Object { $_ -replace $ska_name, $active } | Set-Content -force $filename
+             }
+}}}}}
