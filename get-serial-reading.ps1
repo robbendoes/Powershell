@@ -1,3 +1,5 @@
+# get the remote comport information from port 0 - 7
+
 ﻿while ($i -le 7) 
  {
     $k = "4800","9600","38400"
