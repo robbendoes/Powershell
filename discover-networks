@@ -1,0 +1,107 @@
+# Discover your neighbours script parse everything to the div file dynamically
+# Rob de Jongh 30-01-2012
+# Versie 2.0
+[string]$parents = New-Item -Path C:\ICToS\Web\ska.csv -ItemType file -Force
+[string]$create_file = New-Item -Path C:\ICToS\Web\insert.html -ItemType file -Force
+$ipconfig = ipconfig /all
+$string = $ipconfig  | findstr Gateway | %{ $_.split(':')[1];} 
+$gateway = $string -replace '\s',''
+$begin = $gateway | %{ $_.split('.')[3];}
+$cn = $gateway| %{ $_.split('.')[-4,-3,-2];} 
+$subnet = $cn -join '.'
+$dot = "."
+$tot = $subnet + $dot
+$userfile = "C:\ICToS\Data\check_user.ps1"
+$1userfile = "C:\ICToS\Data\lock_check_user.ps1"
+
+if (test-path $userfile) { move-item -force $userfile -destination $1userfile }
+
+if ( $begin -eq 193 ) { $end = 253 }
+if ( $end -eq 222 ) { $begin = 192 }
+if ( $end -eq 190 ) { $begin = 160 }
+if ( $end -eq 158 ) { $begin = 128 }
+if ( $end -eq 126 ) { $begin = 96 }
+if ( $end -eq 94 ) { $begin = 64 }
+if ( $end -eq 62 ) { $begin = 32 }
+if ( $end -eq 30 ) { $begin = 1 }
+
+
+for ($i=[INT]$begin;$i -le [INT]$end;$i++) {
+    $ipAddress = $tot + $i
+    # Setup the Process startup info
+        $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+        $pinfo.FileName = "ping.exe" 
+        $pinfo.Arguments = $ipAddress
+        $pinfo.UseShellExecute = $false
+        $pinfo.CreateNoWindow = $true
+        $pinfo.RedirectStandardOutput = $true
+        $pinfo.RedirectStandardError = $true
+
+        # Create a process object using the startup info
+        $process = New-Object System.Diagnostics.Process
+        $process.StartInfo = $pinfo
+
+        # Start the process
+        $process.Start() | Out-Null
+
+        # Wait a while for the process to do something
+        sleep -Seconds 2
+
+        # If the process is still active kill it
+        if (!$process.HasExited) {
+            $process.Kill()
+        }
+
+        # get output from stdout and stderr
+        $stdout = $process.StandardOutput.ReadToEnd()
+        $stderr = $process.StandardError.ReadToEnd()
+        write-host $ipAddress
+        # check output for success information, you may want to check stderr if stdout if empty
+        if ($stdout.Contains("TTL")) {
+            # Write ska-name to file
+            ping -a $ipAddress | findstr ska | %{ $_.split(' ')[1];} | %{ $_.split('.')[-4];} >> $parents
+        } 
+}
+Add-Content -path $create_file "`<!DOCTYPE html>";
+Add-Content -path $create_file "`<!-- saved from url=(0016)http://localhost -->";
+Add-Content -path $create_file "`<html lang=`"en`">";
+Add-Content -path $create_file "`<head>"
+Add-Content -path $create_file "`<meta charset=`"utf-8`">";
+Add-Content -path $create_file "`<meta http-equiv=`"X-UA-Compatible`" content=`"IE=10`">";
+Add-Content -path $create_file "`<meta http-equiv=`"refresh`" content=`"30`">";
+Add-Content -path $create_file "`<meta name=`"viewport`" content=`"width=device-width, initial-scale=1`">";
+Add-Content -path $create_file "`<meta name=`"description`" content=`"ICToS`">";
+Add-Content -path $create_file "`<meta name=`"author`" content=`"TAB-SVM`">";
+Add-Content -path $create_file "`<title>ICT op Schepen</title>";
+Add-Content -path $create_file "`<!-- Bootstrap core CSS -->"; 
+Add-Content -path $create_file "`<link href=`"css/bootstrap.min.css`" rel=`"stylesheet`">";
+Add-Content -path $create_file "`<link href=`"css/sticky-footer-navbar.css`" rel=`"stylesheet`">"; 
+Add-Content -path $create_file "`<!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->";
+Add-Content -path $create_file "`<!--[if lt IE 9]>";
+Add-Content -path $create_file "`<script src=`"https://oss.maxcdn.com/html5shiv/3.7.2/html5shiv.min.js`"></script>";
+Add-Content -path $create_file "`<script src=`"https://oss.maxcdn.com/respond/1.4.2/respond.min.js`"></script>";
+Add-Content -path $create_file "`<![endif]-->";
+Add-Content -path $create_file "`</head>";
+Add-Content -path $create_file "`<body>"; 
+Add-Content -path $create_file "`<div class=`"container`">"; 
+Add-Content -path $create_file "`<div class=`"row row-centered`" style=`"margin:15px`">";
+Add-Content -path $create_file "`<div class=`"glassbox-centered`">"; 
+                                
+
+[array]$Aparents= get-content -path $parents 
+foreach ( $Aska in $Aparents) {
+
+Add-Content -path $create_file "`<div class=`"col-md-2 col-centered`" style=`"width:auto !important`">";
+Add-Content -path $create_file "`<div class=`"glassbox`">";
+Add-Content -path $create_file "`<img src=`"img/On.png`" alt=`"On`" class=`"img`"><h4>$Aska</h4><h4>Actief Gebruiker:</h4><p></p>";
+Add-Content -path $create_file "`<a class=`"btn btn-primary`" onclick=`"var w = new ActiveXObject('WScript.Shell'); w.run('mstsc.exe /v:$Aska'); return true`" href=`"#`">Verbinden</a>";
+Add-Content -path $create_file "`</div>";
+Add-Content -path $create_file "`</div>";
+}
+Add-Content -path $create_file "`</div></div></div>"; 
+Add-Content -path $create_file "`<script src=`"js/jquery.min.js`"></script>";
+Add-Content -path $create_file "`<script src=`"js/bootstrap.min.js`"></script>";
+Add-Content -path $create_file "`<script src=`"js/clock.js`"></script>";
+Add-Content -path $create_file "`</body></html>"; 
+
+if ( test-path $1userfile) { move-item -force $1userfile -destination $userfile }
