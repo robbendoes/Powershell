@@ -1,0 +1,152 @@
+# Doel : Controleer de grootte van de kaartmateriaal of de upgrade_idos2\mapdata folder.
+# Input methodes : AD of FILE.
+###########################################################################################
+[string]$scriptFolderPath = Split-Path -Parent ($MyInvocation.MyCommand).Definition
+[string]$scriptName = ($MyInvocation.MyCommand).Name
+[string]$localMachine = (Get-WmiObject -Class win32_computersystem).name
+[string]$inputFile = ($scriptFolderPath + "\" + $scriptName.Replace(".ps1","_input.csv"))
+[array]$aInput = Import-Csv -Path $inputFile
+[string]$logfile = New-Item -Path ($scriptFolderPath + "\" + $scriptName.Replace(".ps1","_" + (get-date -Format "yyyyMMddHHmm") + ".log")) -ItemType file -Force
+[string]$outfileSize = New-Item -Path ($scriptFolderPath + "\" + $scriptName.Replace(".ps1","_OnjuisteGrootte" + (get-date -Format "yyyyMMddHHmm") + ".csv")) -ItemType file -Force #-Value "Computer`n"
+[string]$outfileNoFolder = New-Item -Path ($scriptFolderPath + "\" + $scriptName.Replace(".ps1","_GeenKaartMateriaal" + (get-date -Format "yyyyMMddHHmm") + ".csv")) -ItemType file -Force #-Value "Computer`n"
+[string]$outfileIdosNietActief = New-Item -Path ($scriptFolderPath + "\" + $scriptName.Replace(".ps1","_IdosNietActief" + (get-date -Format "yyyyMMddHHmm") + ".csv")) -ItemType file -Force #-Value "Computer`n"
+[string]$outfileOffline = New-Item -Path ($scriptFolderPath + "\" + $scriptName.Replace(".ps1","_Offline" + (get-date -Format "yyyyMMddHHmm") + ".csv")) -ItemType file -Force #-Value "Computer`n"
+[string]$outfileDone = New-Item -Path ($scriptFolderPath + "\" + $scriptName.Replace(".ps1","_Done" + (get-date -Format "yyyyMMddHHmm") + ".csv")) -ItemType file -Force #-Value "Computer`n"
+[string]$logFileFolderFile = (split-path $logfile -NoQualifier)
+[string]$logFileDrive = (split-path $logfile -Qualifier)
+[string]$remoteLogfile = ("\\" + $localMachine + "\" + $logFileDrive.Replace(":","$") + $logFileFolderFile)
+[string]$dateFormat = "dd-MM-yyyy HH:mm:ss"
+###########################################################################################
+[array]$aServices = @("symmetricds","mysql55","geoservice","postgresql-9.1","tomcat6")
+[string]$unpackedFoldername = "Kaartmateriaal"
+[string]$localUnpackedFolder = "E:\Kaartmateriaal"
+
+[string]$movefolder = "E:\upgrade_idos2\mapdata"
+[string]$movefoldername = "upgrade_idos2\mapdata"
+
+$unpackedFoldersize = 18885109043
+#[array]$askaExclusions = @("SKA-W000019","SKA-W000065","SKA-W000119","SKA-W000020","SKA-W000096","SKA-W000154","SKA-W000216","SKA-W000172","SKA-W000184")
+#Aangepast Maandag 23/06/2014
+[array]$askaExclusions = @("SKA-W000019","SKA-W000120","SKA-W000020","SKA-W000096","SKA-W000154","SKA-W000216","SKA-W000172","SKA-W000184")
+###########################################################################################
+[string]$inputmod = "ad" 
+#[string]$inputmod = "file"
+#############################################
+
+function findSKA ()
+{
+    Get-ADComputer -SearchBase "OU=Computers,OU=SKA,OU=Directies,DC=ad,DC=rws,DC=nl" -Filter 'name -like "ska-w*"' | Select-Object Name |`
+    ForEach-Object {checkSize $_.name}
+}
+
+function checkIDOS ($computer)
+{
+    $idos = $true
+    :idosloop foreach ($service in $aServices) {
+    if (!(Get-WmiObject -ComputerName $computer -Class Win32_Service -Filter "name = '$service' and startmode = 'auto'"))
+        {
+            $idos = $false
+            write-host $computer $service $idos -ForegroundColor Red
+            break idosLoop
+        }
+        else 
+        {
+            $idos = $true
+            write-host $computer $service $idos -ForegroundColor Green
+        }
+    }
+    return $idos
+}
+
+function checkSize ($computer)
+{
+    write-host $computer
+    #controleer of de SKA in de lijst met exclusions zit.
+    if ($askaExclusions -notcontains $computer) 
+    {
+        If(Test-Connection $Computer -Count 2 -ErrorAction SilentlyContinue) 
+        {
+            #controleer of IDOS actief is.
+            if (checkIDOS($computer))
+            {
+                #welke folder bestaat : kaartmateriaal of upgrade_idos2\mapdata.
+                $remoteMoveFolder = ("\\" + $computer + "\e$\" + $moveFoldername)
+                $remoteUnpackedFolder = ("\\" + $computer + "\e$\" + $unpackedFoldername)
+                if (test-path $remoteMoveFolder) 
+                { 
+                    $remoteUnpackedFolder = ("\\" + $computer + "\e$\" + $moveFoldername) 
+                    $localUnpackedFolder = $movefolder
+                }
+#                elseif (test-path $remoteUnpackedFolder) 
+#                {
+#                    $remoteUnpackedFolder = ("\\" + $computer + "\e$\" + $unpackedFoldername)
+#                }
+                write-host $remoteUnpackedFolder -ForegroundColor Gray
+                if (test-path $remoteUnpackedFolder)
+                {
+                    Write-host "Started FolderSizeCheck on $computer . . . . . . . . (Please Wait)" -ForegroundColor Gray
+                    $resultaat = Invoke-Command -ComputerName $computer -ScriptBlock {
+                        $size = Get-ChildItem $using:localunpackedfolder -Recurse | Measure-Object -property length -sum
+                        if ($size.sum -eq $using:unpackedfoldersize) 
+                        {
+                            $sizeresult += $true,$size.sum
+                        }
+                        else 
+                        {
+                            $sizeresult += $false,$size.sum
+                        }
+                        return $sizeresult
+                    } 
+                
+                    if (!($resultaat[0]))
+                    {
+                        write-output $computer | out-file -append $outfileSize
+                        Write-Output ((get-date -Format $dateFormat) + "--" + $computer + "-- Grootte van " + $localunpackedfolder + "(" + $resultaat[1] + ")" + " is niet gelijk aan " + $unpackedfoldersize + ". Computer toegevoegd aan " + $outfileSize) | Out-File -Append $logfile
+
+                    }
+                    else 
+                    {
+                        write-output $computer | out-file -append $outfileDone
+                        Write-Output ((get-date -Format $dateFormat) + "--" + $computer + "-- Grootte van " + $localunpackedfolder + "(" + $resultaat[1] + ")" + " is gelijk aan " + $unpackedfoldersize) | Out-File -Append $logfile
+                    }
+                }
+                else 
+                {
+                    write-output $computer | out-file -append $outfileNoFolder
+                    Write-Output ((get-date -Format $dateFormat) + "--" + $computer + "--" + $localunpackedFolder + " niet gevonden, maar IDOS is wel actief ! Computer toegevoegd aan " + $outfileNoFolder) | Out-File -Append $logfile 
+                }
+            }
+            else 
+            {
+                Write-Output ((get-date -Format $dateFormat) + "--" + $computer + "--" + " IDOS is niet actief.") | Out-File -Append $logfile 
+                write-output $computer | out-file -append $outfileIdosNietActief
+            }
+        }
+        else 
+        {
+            Write-Output ((get-date -Format $dateFormat) + "--Kan geen netwerk verbinding maken met " + $computer + "." ) | Out-File -Append $logfile 
+            write-host $computer "Offline" -ForegroundColor Red
+            write-output $computer | out-file -append $outfileOffline
+        }
+    }
+    else
+    {
+        Write-Output ((get-date -Format $dateFormat) + "--" + $computer + "--" + " Computer staat in de lijst met uitzonderingen." ) | Out-File -Append $logfile 
+        write-host $computer "Excluded" -ForegroundColor DarkRed
+    }
+}
+
+cls
+Write-Output ((get-date -Format $dateFormat ) + "--" + $scriptName + " gestart.") | Out-File -Append $logfile
+#Schrijf de kolomheader in de Output bestanden.
+write-output "Computer" | out-file -append $outfileSize
+write-output "Computer" | out-file -append $outfileNoFolder
+write-output "Computer" | out-file -append $outfileIdosNietActief
+write-output "Computer" | out-file -append $outfileDone
+write-output "Computer" | out-file -append $outfileOffline
+
+
+Switch ($inputmod){
+    "ad" {Write-host "InputMode : $inputmod" ; findska}
+    "file" {Write-host "InputMode : $inputmod" ; foreach ($i in $ainput) {checkSize $i.computer}}
+}
