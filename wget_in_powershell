@@ -1,9 +1,89 @@
-   $client = New-Object system.net.WebClient; 
-                                                [string]$url = 'http://[repo]/repository/Powershellv4/'
-                                                [string]$get1 = 'Install_dotnet_v4.cmd'
+function findSKA () { Get-ADComputer -SearchBase "OU=SKA-W,OU=Computers,OU=SKA,OU=Directies,DC=ad,DC=rws,DC=nl" -Filter 'name -like "ska-w000*"' | Select-Object Name }
+[string]$scriptFolderPath = Split-Path -Parent ($MyInvocation.MyCommand).Definition
+[string]$scriptName = ($MyInvocation.MyCommand).Name
+[string]$logfile = New-Item -Path ($scriptFolderPath + "\" + $scriptName.Replace(".ps1","_" + (get-date -Format "yyyyMMddHHmm") + ".log")) -ItemType file -Force
+#####################################################################################
+
+$inputmode = Read-Host "inputmod AD=1 List=2 Pc=3"
+
+if ( "$inputmode" -eq "1" ) {
+    $ska = findSKA
+    $ska = $ska.name
+    write-host "inputmode AD" -ForegroundColor Gray 
+    }
+
+if ( "$inputmode" -eq "2" ) {
+    $ska = get-content "D:\Powershell\Uitrol_powershell_v4\Uitrol_powershell.csv"
+    }
+
+if ( "$inputmode" -eq "3" ) {
+    $ska = Read-Host "SKA nummer"
+    write-host $ska 
+    }
+
+if ( "$inputmode" -eq "" ) {
+    Echo "usage = inputmod AD=1 List=2 Pc=3"
+    exit
+    }
+
+[string]$source = "D:\Software\Powershellv4"
+[string]$dest = "\\$ska\d$\software\Powershellv4\"
+                                         
+function copy_files {
+                $job = [scriptblock]::Create('robocopy /E /Z /FFT /XO /IPG:30 "' + $source + '" "' + $dest + '" ' )
+                Start-Job -scriptblock $job 
+}
+
+foreach ( $computer in $ska ) {
+
+if (Test-Connection -ComputerName $computer -Count 1 -Quiet)
+{
+    Invoke-Command -ComputerName $computer -ScriptBlock {
+        Set-ExecutionPolicy Unrestricted
+        Set-ItemProperty -Path HKLM:\Software\Microsoft\Windows\CurrentVersion\policies\system -Name EnableLUA -Value 0
+        [string]$Alogfile = New-Item -Path D:\Update-powershell.log -ItemType file -Force
+        [string]$source = "D:\Software\Powershellv4\"
+        [string]$inst_dotnet = "Install_dotnet_v4.cmd"
+        [string]$inst_pwr = "Install_powershell_v4.cmd"
+        $dotnet = $source + $inst_dotnet
+        $power = $source + $inst_pwr
+        $dir_size = 89391678
+      
+function check_version {
+                        $current_version = $Psversiontable.PSVersion.Major
+                        write-output $current_version  | out-file -Append -NoClobber -Force $Alogfile
+                        if ( $current_version -eq 4 ) { 
+                        write-host version is $current_version
+                        write-output "Powershell 4 is already installed"  | out-file -Append -NoClobber -Force $Alogfile 
+                        exit
+                        }
+                        elseif (!($current_version -eq 4 )) { 
+                        write-host version is $current_version
+                        write-output "Powershell must be updated"  | out-file -Append -NoClobber -Force $Alogfile }
+}
+
+function get_files {
+                   if ( ! (Test-Path -path $source) ) { 
+                       write-output "Create $source" | out-file -Append -NoClobber -Force $Alogfile 
+                       New-Item -Path $source -type directory -Force }
+
+                       $pw_size = Get-ChildItem $source -Recurse | Measure-Object -property length -sum 
+                       $pw_size.sum
+                       $dir_size
+                       if (($pw_size.sum -eq $dir_size) -eq $True) { 
+                           write-host Size correct
+                           write-output "Size correct" | out-file -Append -NoClobber -Force $Alogfile 
+                       }
+                       elseif (($pw_size.sum -eq $dir_size) -eq $False) { 
+                           write-output "Size error" | out-file -Append -NoClobber -Force $Alogfile 
+                           write-host "write-output no directory found + files found getting them from http- site"
+                        
+                                                $client = New-Object system.net.WebClient; 
+                                                [string]$url = 'http://[your-repo]/repository/Powershellv4/'
+                                                [string]$get1 = 'Install_[your-dotnet]_v4.cmd'
                                                 [string]$get2 = "Install_powershell_v4.cmd"
-                                                [string]$get3 = "blaat-AllOS-ENU.exe"
-                                                [string]$get4 = "Windows-powershell-MultiPkg.msu"
+                                                [string]$get3 = "[dotnet4.51]NDP451-KB2858728-x86-x64-AllOS-ENU.exe"
+                                                [string]$get4 = "[powershell 4]Windows6.1-KB2819745-x64-MultiPkg.msu"
 
                                                 $1 = $url + $get1
                                                 $2 = $url + $get2
@@ -20,5 +100,28 @@
                                                 $client.DownloadFile($1, $wget1 )
                                                 $client.DownloadFile($2, $wget2 )
                                                 $client.DownloadFile($3, $wget3 )
-                                                $client.DownloadFile($4, $wget4 ) 
+                                                $client.DownloadFile($4, $wget4 )
+                                                
+                                                }
+                       }
+                       
+                       
 
+function update_powershell {
+                           write-host "installing update write-output"  | out-file -Append -NoClobber -Force $Alogfile 
+                           $dotnet
+                           #$power                          
+}                           
+
+function fix_winrm { 
+                    Register-PSSessionConfiguration -name microsoft.powershell -force
+                    Register-PSSessionConfiguration -name microsoft.powershell32 -force
+                    Restart-Service -name WinRM
+}
+
+check_version
+get_files
+update_powershell
+} -AsJob
+}
+}
