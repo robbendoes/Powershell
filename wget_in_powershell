@@ -1,0 +1,24 @@
+   $client = New-Object system.net.WebClient; 
+                                                [string]$url = 'http://[repo]/repository/Powershellv4/'
+                                                [string]$get1 = 'Install_dotnet_v4.cmd'
+                                                [string]$get2 = "Install_powershell_v4.cmd"
+                                                [string]$get3 = "blaat-AllOS-ENU.exe"
+                                                [string]$get4 = "Windows-powershell-MultiPkg.msu"
+
+                                                $1 = $url + $get1
+                                                $2 = $url + $get2
+                                                $3 = $url + $get3
+                                                $4 = $url + $get4 
+
+                                                $wget1 = $source + $get1 
+                                                $wget2 = $source + $get2 
+                                                $wget3 = $source + $get3 
+                                                $wget4 = $source + $get4 
+                                                $1 
+                                                $wget1
+
+                                                $client.DownloadFile($1, $wget1 )
+                                                $client.DownloadFile($2, $wget2 )
+                                                $client.DownloadFile($3, $wget3 )
+                                                $client.DownloadFile($4, $wget4 ) 
+
