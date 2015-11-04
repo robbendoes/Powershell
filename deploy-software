@@ -1,0 +1,137 @@
+function findSKA () { Get-ADComputer -SearchBase "OU=SKA-W,OU=Computers,OU=SKA,OU=Directies,DC=ad,DC=bedrijf,DC=nl" -Filter 'name -like "pc-naam*"' | Select-Object Name }
+[string]$scriptFolderPath = Split-Path -Parent ($MyInvocation.MyCommand).Definition
+[string]$scriptName = ($MyInvocation.MyCommand).Name
+[string]$logfile = New-Item -Path ($scriptFolderPath + "\" + $scriptName.Replace(".ps1","_" + (get-date -Format "yyyyMMddHHmm") + ".log")) -ItemType file -Force
+[array]$askaExclusions = @("pc-nummers")
+#####################################################################################
+$inputmode = Read-Host "inputmod AD=1 List=2 Pc=3" 
+$ska = '' 
+
+if ( "$inputmode" -eq "1" ) {
+    $ska = findSKA
+    $ska = $ska.name
+    write-host "inputmode AD" -ForegroundColor Gray 
+    }
+
+if ( "$inputmode" -eq "2" ) {
+    $ska = get-content "D:\Powershell\Uitrol_ICToS\uitrol_ictos.csv"
+    write-host "inputmode list" -ForegroundColor Gray 
+   }
+
+if ( "$inputmode" -eq "3" ) {
+    $ska = Read-Host "SKA nummer"
+    write-host $ska 
+    }
+
+if ( "$inputmode" -eq "" ) {
+    Echo "usage = inputmod AD=1 List=2 Pc=3"
+    exit 1
+    }
+
+function getlogfiles {
+           write-output "get logfiles"
+           get-content \\$computer\D$\uitrol_ictos.log | out-file -Append -NoClobber -Force $logfile   
+           }
+
+foreach ($computer in $ska ) {
+ #controleer of de SKA in de lijst met exclusions zit.
+if ($askaExclusions -notcontains $computer) 
+ {
+ if (Test-Connection -ComputerName $computer  -Count 2 -ErrorAction SilentlyContinue)
+     { write-host $computer connected 
+     if (Get-WmiObject -Computername $computer -Class Win32_Service -Filter "name = 'mysql55' and startmode = 'auto'") 
+     {
+     write-output "$computer mysqld is auto start"
+     write-Host $computer -ForegroundColor Gray
+     invoke-command -computername $computer -ScriptBlock { 
+                Set-ExecutionPolicy Unrestricted
+                if ( test-path D:\uitrol_ictos.log ) { remove-item -force E:\uitrol_ictos.log }
+                [string]$Alogfile = New-Item -Path E:\uitrol_ictos.log -ItemType file -Force
+                $services = "Tomcat6","mysql55","symmetricds","nscp"
+                $processes = "java*","mysqld","tomcat6*","nscp"
+                $deltomcat = "temp","webapps-work","logs","work"
+                $djwarfiles = "filename.war","filename.war"
+                [string]$serverxml = 'E:\server.xml'
+                [string]$destpathdj = 'E:\Tomcat'
+                [string]$nagios_filedj = "C:\Program Files\NSClient++\scripts\check_dj.ps1"
+               
+function get_files {
+       write-output "getting if files" | out-file -Append -NoClobber -Force $Alogfile
+             invoke-webRequest http://website/repository/software/digitaaljournaal/journal-services-1.10.0.RC4.war -Outfile $destpathdj\webapps\journal-services-1.10.0.RC4.war 
+             invoke-webRequest http://website/repository/software/digitaaljournaal/journal-webapp-1.10.0.RC4.war -Outfile $destpathdj\webapps\journal-webapp-1.10.0.RC4.war 
+             invoke-webRequest http://website/repository/software/digitaaljournaal -Outfile $destpathdj\conf\server.xml
+}
+
+function stop_services {
+`         write-output "First stop all services $services" | out-file -Append -NoClobber -Force $Alogfile
+          $services | foreach { get-service -Name $_ | Stop-Service -Force -verbose -ErrorAction SilentlyContinue }
+          sleep 10
+          write-output "Kill all processes" | out-file -Append -NoClobber -Force $Alogfile
+          $processes | foreach { stop-process -name $_ -Force -verbose -ErrorAction SilentlyContinue}
+          write-output "$computer processes stopped" | out-file -Append -NoClobber -Force $Alogfile
+}
+                
+ function create_backup { 
+           write-output "Create backup directory" | out-file -Append -NoClobber -Force $Alogfile
+           new-item -Force "E:\backup" -type directory
+           [string]$backup = "E:\backup"
+           write-output "Remove temp files DJ" | out-file -Append -NoClobber -Force $Alogfile
+           foreach ($Adeltomcat in $deltomcat) {
+           get-childitem -path "$destpathdj\$Adeltomcat" -Recurse | remove-item -force -recurse }
+           write-output "DJ temp files removed" | out-file -Append -NoClobber -Force $Alogfile
+           xcopy /C /Q /R "$destpathdj\conf\server.xml" "$backup"
+           xcopy /C /Q /R "$destpathdj\conf\dj\dj.properties" "$backup"
+           xcopy /C /Q /R "E:\SymmetricDS-Pro\engines\client-*.properties" "$backup"
+           write-output "Old tomcat server-config copied to backup directory" | out-file -Append -NoClobber -Force $Alogfile
+           if ( test-path $destpathdj\webapps\$clean_old_service1) { remove-item $destpathdj\webapps\$clean_old_service1 -Recurse -Force }
+           if ( test-path $destpathdj\webapps\$clean_old_service2) { remove-item $destpathdj\webapps\$clean_old_service2 -Recurse -Force }
+}                     
+            
+function change_release_properties {
+           write-output "Change release properties in files DJ" | out-file -Append -NoClobber -Force $Alogfile
+           $djfilename = 'E:\tomcat\conf\dj\dj.properties' 
+           $djFile = Get-Content $djfilename
+           $djFile | ForEach-Object { $_  -replace 'Digitaal Journaal settings for release 1.10.0.RC3','Digitaal Journaal settings for release 1.10.0.RC4' 
+           } | Set-Content $djfilename
+                                    
+           write-output "Change release number in Symmetricds" | out-file -Append -NoClobber -Force $Alogfile
+           $symfilename = 'E:\SymmetricDS-Pro\engines\client-*.properties'
+           $symfile = Get-Content $symfilename
+           $symfile | ForEach-Object { $_ -replace 'schema.version=1.10.0.RC3' ,'schema.version=1.10.0.RC4'
+           } | Set-Content $symfilename 
+           write-output "Changed release number $symfilename" | out-file -Append -NoClobber -Force $Alogfile
+}
+
+function change_nagios {
+           write-output "Change release number DJ in Nagios" | out-file -Append -NoClobber -Force $Alogfile
+           $nagfiledj = Get-Content $nagios_filedj
+           $nagfiledj | ForEach-Object { $_  -replace "journal-services-1.10.0.RC3" ,"journal-services-1.10.0.RC4" `
+           -replace  "RC3", "RC4"
+           } | Set-Content $nagios_filedj 
+           write-output "Changed release number $nagios_filedj" | out-file -Append -NoClobber -Force $Alogfile
+}
+
+function start_services {
+           write-output "Start all services after update $services" | out-file -Append -NoClobber -Force $Alogfile
+           foreach ( $Aservices in $services) { get-service -Name $Aservices | Start-Service } 
+}
+
+get_files
+stop_services
+create_backup  
+install_software 
+change_release_properties
+change_nagios
+start_services
+
+} #-asjob
+}
+} 
+else { write-output "No IDoS $computer" | out-file -Append -NoClobber -Force $logfile 
+     }
+
+write-output "getting logfiles from $computer" | out-file -Append -NoClobber -Force $logfile
+getlogfiles
+get-content $logfile
+} 
+}
